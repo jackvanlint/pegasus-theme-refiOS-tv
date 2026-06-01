@@ -1,43 +1,32 @@
-// Pegasus Frontend - Flixnet theme
-// Copyright (C) 2017  Mátyás Mustoha
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program. If not, see <http://www.gnu.org/licenses/>.
-
+// Pegasus Frontend — refiOS-tv tile cell.
+// Renders one app tile in the row. Special case: the synthetic "Add app" entry
+// is rendered as a centred "+" glyph instead of a logo/screenshot, signalling
+// that activating it opens the add-app picker.
 
 import QtQuick 2.7
 import QtGraphicalEffects 1.0
 
 Item {
     property var game
-
     property bool selected: false
     property var selectedRow: false
-   
-    scale: selected  && selectedRow ? 1.20 : 1.0
-    z: selected  && selectedRow ? 3 : 1
-    
-    //selected border
+
+    readonly property bool isAddTile: game && game.title === "Add app"
+
+    scale: selected && selectedRow ? 1.20 : 1.0
+    z: selected && selectedRow ? 3 : 1
+
+    // selected border
     Rectangle {
         id: selec
-        width: selected  && selectedRow ? parent.width+parent.width*0.03: 0
-        height: parent.height+parent.height*0.08
-        color:"white"
+        width: selected && selectedRow ? parent.width + parent.width * 0.03 : 0
+        height: parent.height + parent.height * 0.08
+        color: "white"
         opacity: 0.2
         anchors.centerIn: parent
-        z:0
+        z: 0
     }
-     Rectangle {
+    Rectangle {
         id: shadow
         width: selec.width * 0.95
         height: selec.height * 0.65
@@ -52,24 +41,45 @@ Item {
         visible: selectedRow && selected
         color: "black"
         opacity: 0.4
-         anchors.centerIn: parent
-        cornerRadius: rect.radius + glowRadius
-        z:-1
+        anchors.centerIn: parent
+        cornerRadius: glowRadius
+        z: -1
     }
 
     Behavior on scale { PropertyAnimation { duration: 150 } }
 
-    //fallback tile
+    // ── "+" add-app tile ────────────────────────────────────────────────
+    Rectangle {
+        anchors.fill: parent
+        visible: isAddTile
+        color: "transparent"
+        border.color: "white"
+        border.width: vpx(2)
+        radius: vpx(6)
+        opacity: 0.6
+
+        Text {
+            anchors.centerIn: parent
+            text: "+"
+            color: "white"
+            font {
+                pixelSize: parent.height * 0.7
+                family: globalFonts.sans
+                weight: Font.Light
+            }
+        }
+    }
+
+    // ── regular app tile (fallback + logo over screenshot) ──────────────
     Rectangle {
         anchors.fill: parent
         color: "#333"
-        visible: image.status !== Image.Ready
+        visible: !isAddTile && image.status !== Image.Ready
+
         Image {
             anchors.centerIn: parent
-
             visible: image.status === Image.Loading
             source: "assets/loading-spinner.png"
-
             RotationAnimator on rotation {
                 loops: Animator.Infinite
                 from: 0; to: 360
@@ -79,14 +89,11 @@ Item {
 
         Text {
             text: model.title
-
             width: parent.width * 0.8
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-
             anchors.centerIn: parent
             visible: !model.assets.gridicon
-
             color: "#eee"
             font {
                 pixelSize: vpx(16)
@@ -98,24 +105,20 @@ Item {
     Item {
         id: delegateContainer
         anchors.fill: parent
+        visible: !isAddTile
 
-        //screenshot
         Image {
             id: screenshot
             width: parent.width
             height: parent.height
-            
             asynchronous: true
             smooth: true
             source: modelData.assets.screenshots[0] ? modelData.assets.screenshots[0] : ""
             sourceSize { width: 256; height: 256 }
             fillMode: Image.PreserveAspectCrop
-            
         }
 
-        //dark mask
-        Rectangle 
-        {
+        Rectangle {
             width: parent.width
             height: parent.height
             color: "black"
@@ -123,10 +126,8 @@ Item {
             visible: screenshot.source != ""
         }
 
-        // Logo
         Image {
             id: image
-
             width: screenshot.width
             height: screenshot.height
             anchors {
@@ -139,7 +140,7 @@ Item {
             fillMode: Image.PreserveAspectFit
             smooth: true
             visible: modelData.assets.logo ? modelData.assets.logo : ""
-            z:8
+            z: 8
         }
     }
 }
