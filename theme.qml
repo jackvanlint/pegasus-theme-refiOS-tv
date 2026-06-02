@@ -1,188 +1,212 @@
-// Pegasus Frontend — refiOS-tv (forked from refiOS / Flixnet by Mátyás Mustoha, eleo95)
-// Customised for a CachyOS mini PC TV launcher: hero + single unlabelled row + pinnable app.
-//
-// Layout:
-//   ┌─────────────────────────────────────┐
-//   │                                     │
-//   │            HERO (pinned)            │   ~55% of screen height
-//   │                                     │
-//   ├─────────────────────────────────────┤
-//   │ ▣  ▣  ▣  ▣  ▣  ▣  +                │   single unlabelled row
-//   └─────────────────────────────────────┘
-//
-// Pin state lives in pegasus-frontend.conf (Qt.labs.settings), category "tvLauncher".
-// Long-press the hero (≥600 ms) to open the pin picker.
-// The "+" tile is a synthetic entry in metadata.pegasus.txt called "Add app";
-// its launch command runs the yad picker that adds detected apps.
-
-import QtQuick 2.7
+import QtQuick 2.15
 import QtGraphicalEffects 1.12
-import Qt.labs.settings 1.0
-
 
 FocusScope {
+    id: root
     focus: true
-    FontLoader { id: roboto_light; source: "assets/fonts/Roboto-Light.ttf" }
-    FontLoader { id: roboto_thin; source: "assets/fonts/Roboto-Thin.ttf" }
 
-    // ── persistent state ─────────────────────────────────────────────────
-    Settings {
-        id: tvSettings
-        category: "tvLauncher"
-        property string pinnedAppTitle: ""
+    FontLoader { id: fontLight; source: "assets/fonts/Roboto-Light.ttf" }
+
+    // ── Palette ───────────────────────────────────────────────────────
+    readonly property color clrBg:    "#0B0810"
+    readonly property color clrCard:  "#1A1120"
+    readonly property color clrRose:  "#C48BAA"
+    readonly property color clrMauve: "#9D6E8A"
+    readonly property color clrText:  "#EDD6E8"
+    readonly property color clrMuted: "#9A7A92"
+
+    // ── Tile geometry ─────────────────────────────────────────────────
+    readonly property int tileW:   vpx(200)
+    readonly property int tileH:   vpx(120)
+    readonly property int tileGap: vpx(14)
+
+    // ── Collections ───────────────────────────────────────────────────
+    readonly property var mainColl: {
+        for (var i = 0; i < api.collections.count; i++)
+            if (api.collections.get(i).name === "Apps") return api.collections.get(i)
+        return api.collections.count > 0 ? api.collections.get(0) : null
     }
-
-    // ── layout constants ─────────────────────────────────────────────────
-    readonly property real cellRatio: 16 / 9
-    readonly property int cellHeight: vpx(130)
-    readonly property int cellWidth: cellHeight * cellRatio
-    readonly property int cellSpacing: vpx(10)
-    readonly property int cellPaddedWidth: cellWidth + cellSpacing
-    readonly property int leftGuideline: vpx(100)
-
-    // ── pinned-app lookup ───────────────────────────────────────────────
-    // Source of truth: api.collections.get(0).games (the only collection: "Apps").
-    // Falls back to the first non-"Add app" entry when no pin is set or the pinned title is gone.
-    readonly property var appsCollection: api.collections.count > 0 ? api.collections.get(0) : null
-    readonly property var pinnedGame: {
-        if (!appsCollection) return null
-        var games = appsCollection.games
-        for (var i = 0; i < games.count; ++i) {
-            var g = games.get(i)
-            if (g.title === tvSettings.pinnedAppTitle && g.title !== "Add app") return g
-        }
-        // fallback: first real app
-        for (var j = 0; j < games.count; ++j) {
-            var g2 = games.get(j)
-            if (g2.title !== "Add app") return g2
-        }
+    readonly property var availColl: {
+        for (var i = 0; i < api.collections.count; i++)
+            if (api.collections.get(i).name === "Available") return api.collections.get(i)
         return null
     }
 
-    // ── background ──────────────────────────────────────────────────────
+    // ── Background ────────────────────────────────────────────────────
     Rectangle {
-        id: bg
         anchors.fill: parent
-
-        // ────────────────────────────────────────────────────────────────
-        // BACKGROUND IMAGE — to use a wallpaper instead of the gradient:
-        //   1. Drop your image into themes/refiOS-tv/assets/background.jpg
-        //   2. Uncomment the Image + Rectangle block below
-        //   3. Comment out the RadialGradient below
-        //
-        // Image {
-        //     anchors.fill: parent
-        //     source: "assets/background.jpg"
-        //     fillMode: Image.PreserveAspectCrop
-        //     asynchronous: true
-        // }
-        // Rectangle {
-        //     anchors.fill: parent
-        //     color: "#000"
-        //     opacity: 0.55
-        // }
-        // ────────────────────────────────────────────────────────────────
-
-        RadialGradient {
-            anchors.fill: parent
-            horizontalOffset: vpx(-450)
-            verticalOffset: vpx(-250)
-            gradient: Gradient {
-                GradientStop { position: 0.1; color: "#051720" }
-                GradientStop { position: 0.5; color: "#07131d" }
-                GradientStop { position: 1; color: "#00050f" }
-            }
-        }
-
-        // ── hero ────────────────────────────────────────────────────────
-        HeroSection {
-            id: hero
-            game: pinnedGame
-            anchors {
-                top: parent.top
-                left: parent.left
-                right: parent.right
-            }
-            height: parent.height * 0.55
-            onLongPress: appPicker.visible = true
-            onActivated: if (game) game.launch()
-        }
-
-        // ── single horizontal row of apps ───────────────────────────────
-        PathView {
-            id: appAxis
-            width: parent.width
-            height: cellHeight * 1.4
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: vpx(40)
-
-            model: appsCollection ? appsCollection.games : null
-            delegate: GameAxisCell {
-                game: modelData
-                width: cellWidth * 0.98
-                height: cellHeight * 0.78
-                selected: PathView.isCurrentItem
-                selectedRow: row.activeFocus
-            }
-
-            readonly property int maxItemCount: 2 + Math.ceil(width / cellPaddedWidth)
-            pathItemCount: model ? Math.min(maxItemCount, model.count) : 0
-
-            property int fullPathWidth: pathItemCount * cellPaddedWidth
-            path: Path {
-                startX: (appAxis.model && appAxis.model.count >= appAxis.maxItemCount)
-                    ? leftGuideline - cellPaddedWidth * 1.5
-                    : leftGuideline + (cellPaddedWidth * 0.5 - cellSpacing * 0.5)
-                startY: cellHeight * 0.5
-                PathLine {
-                    x: appAxis.path.startX + appAxis.fullPathWidth
-                    y: appAxis.path.startY
-                }
-            }
-
-            snapMode: PathView.SnapOneItem
-            highlightRangeMode: PathView.StrictlyEnforceRange
-            clip: true
-
-            preferredHighlightBegin: (model && model.count >= maxItemCount)
-                ? (2 * cellPaddedWidth - cellSpacing / 2) / fullPathWidth
-                : 0
-            preferredHighlightEnd: preferredHighlightBegin
-        }
-
-        // ── focus router ────────────────────────────────────────────────
-        // Up arrow / hover top: hero focus. Down / hover bottom: row focus.
-        // Default focus: hero (so a fresh boot highlights the pinned app).
-        Item {
-            id: row
-            anchors.fill: appAxis
-            focus: !hero.activeFocus
-            Keys.onLeftPressed: appAxis.decrementCurrentIndex()
-            Keys.onRightPressed: appAxis.incrementCurrentIndex()
-            Keys.onUpPressed: hero.focus = true
-            Keys.onPressed: {
-                if (!event.isAutoRepeat && api.keys.isAccept(event)) {
-                    if (appAxis.model && appAxis.currentIndex >= 0) {
-                        var g = appAxis.model.get(appAxis.currentIndex)
-                        if (g) g.launch()
-                    }
-                }
-            }
-        }
-
-        Keys.onDownPressed: row.focus = true
+        color: root.clrBg
     }
 
-    // ── pin picker overlay ──────────────────────────────────────────────
-    AppPickerOverlay {
-        id: appPicker
+    // ── Banner area ───────────────────────────────────────────────────
+    Item {
+        id: bannerArea
+        anchors { top: parent.top; left: parent.left; right: parent.right }
+        height: parent.height - vpx(190)
+        clip: true
+
+        // Previous banner (stays visible while next loads)
+        Image {
+            id: bannerPrev
+            anchors.fill: parent
+            fillMode: Image.PreserveAspectCrop
+            smooth: true
+            cache: true
+        }
+        // Next banner fades in when ready
+        Image {
+            id: bannerNext
+            anchors.fill: parent
+            fillMode: Image.PreserveAspectCrop
+            smooth: true
+            asynchronous: true
+            opacity: 0
+            cache: true
+
+            onStatusChanged: {
+                if (status === Image.Ready) {
+                    opacityAnim.running = true
+                } else if (status === Image.Error) {
+                    opacity = 0
+                }
+            }
+
+            NumberAnimation on opacity {
+                id: opacityAnim
+                to: 1; duration: 380
+                easing.type: Easing.OutCubic
+                running: false
+                onStopped: {
+                    bannerPrev.source = bannerNext.source
+                    bannerNext.opacity = 0
+                }
+            }
+        }
+
+        // Solid fallback behind banners
+        Rectangle {
+            anchors.fill: parent
+            color: root.clrCard
+            z: -1
+        }
+
+        // Bottom gradient into bg colour
+        Rectangle {
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            height: vpx(300)
+            z: 2
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "transparent" }
+                GradientStop { position: 1.0; color: root.clrBg }
+            }
+        }
+
+        // App name
+        Text {
+            id: titleText
+            anchors {
+                left: parent.left; leftMargin: vpx(80)
+                bottom: parent.bottom; bottomMargin: vpx(40)
+            }
+            z: 3
+            color: root.clrText
+            font { family: fontLight.name; pixelSize: vpx(42) }
+        }
+    }
+
+    // ── App row ───────────────────────────────────────────────────────
+    PathView {
+        id: appRow
+        anchors {
+            bottom: parent.bottom; bottomMargin: vpx(36)
+            left: parent.left; right: parent.right
+        }
+        height: root.tileH + vpx(36)
+        clip: false
+        focus: true
+
+        model: mainColl ? mainColl.games : null
+
+        readonly property int stepW: root.tileW + root.tileGap
+        readonly property int numVisible: 16
+        pathItemCount: model ? Math.min(numVisible, model.count) : 0
+
+        readonly property real trackW: pathItemCount * stepW
+        readonly property real px0: vpx(80) - stepW * 2.5
+
+        path: Path {
+            startX: appRow.px0
+            startY: root.tileH * 0.5 + vpx(18)
+            PathLine { x: appRow.px0 + appRow.trackW; y: appRow.path.startY }
+        }
+
+        snapMode:           PathView.SnapOneItem
+        highlightRangeMode: PathView.StrictlyEnforceRange
+
+        preferredHighlightBegin: {
+            if (!model || model.count < numVisible || trackW === 0) return 0
+            return (stepW * 2.5) / trackW
+        }
+        preferredHighlightEnd: preferredHighlightBegin
+
+        onCurrentIndexChanged: {
+            if (!model || currentIndex < 0 || currentIndex >= model.count) return
+            var g = model.get(currentIndex)
+            if (!g) return
+            if (g.title === "Add app") {
+                titleText.text = "Add App"
+                bannerNext.source = ""
+                bannerPrev.source = ""
+            } else {
+                titleText.text = g.title
+                var slug = g.title.toLowerCase().replace(/ /g, "-")
+                bannerNext.source = "assets/banners/" + slug + ".jpg"
+            }
+        }
+
+        Keys.onLeftPressed:  decrementCurrentIndex()
+        Keys.onRightPressed: incrementCurrentIndex()
+        Keys.onPressed: {
+            if (event.isAutoRepeat) return
+            if (api.keys.isAccept(event)) {
+                var g = model.get(currentIndex)
+                if (!g) return
+                if (g.title === "Add app") {
+                    browser.visible = true
+                    browser.forceActiveFocus()
+                } else {
+                    g.launch()
+                }
+                event.accepted = true
+            }
+        }
+
+        delegate: AppTile {
+            game:      modelData
+            isCurrent: PathView.isCurrentItem
+            tileW:     root.tileW
+            tileH:     root.tileH
+            clrCard:   root.clrCard
+            clrRose:   root.clrRose
+            clrText:   root.clrText
+        }
+    }
+
+    // ── App browser overlay ───────────────────────────────────────────
+    AppBrowserOverlay {
+        id: browser
         anchors.fill: parent
         visible: false
-        model: appsCollection ? appsCollection.games : null
-        onPicked: {
-            tvSettings.pinnedAppTitle = title
+        availColl: root.availColl
+        clrBg:    root.clrBg
+        clrCard:  root.clrCard
+        clrRose:  root.clrRose
+        clrMauve: root.clrMauve
+        clrText:  root.clrText
+        clrMuted: root.clrMuted
+        onClosed: {
             visible = false
+            appRow.forceActiveFocus()
         }
-        onDismissed: visible = false
     }
 }
